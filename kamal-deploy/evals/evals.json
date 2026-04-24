@@ -1,0 +1,29 @@
+{
+  "skill_name": "kamal-deploy",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "i just got a new macbook and a coworker told me to use kamal to deploy our app. can you help me get it set up? i havent installed anything dev related yet on this machine",
+      "expected_output": "Walks through the local install: checks state, installs Homebrew, brew ruby (with PATH fix in ~/.zshrc), then `gem install kamal`, verifies with `kamal version`. Points to docs at the end.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "trying to install kamal but `gem install kamal` keeps failing with permission errors. i have homebrew already. running on m2 macbook",
+      "expected_output": "Diagnoses gem install hitting system Ruby, not a perms problem. Has user check `which ruby` and prefix. Installs brew ruby on Apple Silicon path (/opt/homebrew/opt/ruby/bin), fixes ~/.zshrc, reloads, re-runs gem install without sudo. Verifies with kamal version.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I want to set up kamal on my mac please",
+      "expected_output": "Doesn't barrel ahead. First runs system checks, reports what's found, then proposes next steps based on actual state. Skips already-completed work. Ends at `kamal version` working with pointers to docs.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "ok i installed kamal locally and i have a fresh ubuntu 22.04 server in aliyun beijing region. ssh works (root@1.2.3.4). how do i get docker on it? our team is in china so docker hub pulls are slow",
+      "expected_output": "SSHes in to check existing state first. Installs Docker via the Aliyun mirror (either `get.docker.com --mirror Aliyun` or apt repo via mirrors.aliyun.com). Configures /etc/docker/daemon.json with a China registry mirror — should recommend Aliyun's authenticated mirror specifically since the server is on Aliyun (or note Tencent's mirror only works on Tencent Cloud). Restarts docker, verifies with `docker info | grep Registry Mirrors`, smoke-tests with `docker pull hello-world`. Tells user NOT to run `kamal server bootstrap` since Docker is already installed.",
+      "files": []
+    }
+  ]
+}

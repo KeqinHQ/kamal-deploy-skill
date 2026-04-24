@@ -1,0 +1,26 @@
+service: kamal-hello-test
+image: keqin/kamal-hello-test
+
+servers:
+  web:
+    hosts:
+      - <%= ENV['DEPLOY_IP'] %>
+    proxy:
+      ssl: true
+      host: <%= ENV['DEPLOY_HOST'] %>
+      path_prefix: "/"
+      app_port: 80
+      healthcheck:
+        interval: 3
+        path: /up
+        timeout: 3
+
+registry:
+  server: private-registry.tealight.uk:8443
+  username:
+    - KAMAL_REGISTRY_USERNAME
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64

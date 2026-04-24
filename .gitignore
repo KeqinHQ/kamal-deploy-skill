@@ -1,0 +1,25 @@
+# Skill-creator eval workspace — test runs, timing data, response captures.
+# Useful while iterating; not for publishing.
+kamal-deploy-workspace/
+
+# Per-user Claude Code settings
+.claude/settings.local.json
+
+# Kamal secrets — never commit literal passwords.
+# Real values come from env vars or a local .env file.
+.kamal/secrets
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# macOS / OS junk
+.DS_Store
+Thumbs.db
+
+# Editor scratch
+.vscode/
+.idea/
+*.swp
+*~
