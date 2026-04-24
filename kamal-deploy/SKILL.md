@@ -294,6 +294,21 @@ Things to flag explicitly to the user — these aren't optional:
 - **`DEPLOY_IP` and `DEPLOY_HOST` env vars** — use ERB so server addresses stay out of the repo. Set them in the user's shell or a per-environment `.env` file (don't commit).
 - **`ssl: true`** — kamal-proxy provisions Let's Encrypt certs automatically using the `host` value, as long as DNS for `DEPLOY_HOST` points at `DEPLOY_IP` and ports 80/443 are open on the server.
 
+### Accessories: databases and Redis
+
+If the app needs a database or Redis, add an `accessories:` block to `deploy.yml`. Don't add accessories the user didn't ask for — ask first ("does your app need a database, cache, or queue?").
+
+When the user says they need a **database**, recommend **Postgres** first. Reach for MySQL only if they specifically need it (legacy schema, ORM constraint, etc.). Postgres has stronger types, better concurrency, and is the default in modern app frameworks.
+
+Ready-to-paste configs for Postgres, MySQL, and Redis live in `references/accessories.md` — pinned versions, secrets-via-env, persistent named volumes, plus boot/management commands. Read that file when adding accessories rather than improvising.
+
+After adding any accessory, the user must export the corresponding secrets in their shell:
+- Postgres → `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- MySQL → `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`
+- Redis → `REDIS_PASSWORD`
+
+Generate strong values with `openssl rand -base64 24`. Reference them from `.kamal/secrets` by name only (same pattern as `KAMAL_REGISTRY_PASSWORD` below) — never as literals.
+
 ### First-time setup: env vars and credentials
 
 Before the **very first** `kamal setup` / `kamal deploy`, the user's shell needs these env vars. Without them, the ERB in `deploy.yml` won't resolve and Kamal can't authenticate to push the image.

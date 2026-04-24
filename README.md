@@ -27,7 +27,8 @@ kamal-deploy/                 ← the skill itself (install this)
 ├── SKILL.md                  main flow Claude follows
 ├── references/
 │   ├── kamal-commands.md     command cheat sheet (loaded on demand)
-│   └── china-mirrors.md      Docker mirror options for China servers
+│   ├── china-mirrors.md      Docker mirror options for China servers
+│   └── accessories.md        Postgres / MySQL / Redis configs for deploy.yml
 └── evals/
     └── evals.json            test prompts used while developing the skill
 
