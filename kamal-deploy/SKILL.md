@@ -1,24 +1,25 @@
 ---
 name: kamal-deploy
-description: Set up Kamal (Basecamp's Docker deployment tool) end-to-end for deploying to servers in China — installs Homebrew, latest Ruby (not the system Ruby), and the Kamal gem on macOS, then prepares the remote server with Docker and China-friendly registry mirrors. Use this whenever the user wants to install Kamal, set up Kamal on their Mac, prepare a server for Kamal deploys, deploy a Dockerized app to a China-based server, or mentions getting started with Kamal — even if they don't say "install" explicitly.
+description: Set up Kamal (Basecamp's Docker deployment tool) end-to-end for deploying to servers in China — installs Homebrew, latest Ruby (not the system Ruby), the Kamal gem, and Docker on macOS (OrbStack preferred), then prepares the remote server with Docker and China-friendly registry mirrors. Use this whenever the user wants to install Kamal, set up Kamal on their Mac, prepare a server for Kamal deploys, deploy a Dockerized app to a China-based server, or mentions getting started with Kamal — even if they don't say "install" explicitly.
 ---
 
 # Kamal install & setup (macOS local + China remote server)
 
-This skill prepares both ends of a Kamal deploy: the macOS machine that runs Kamal commands, and the remote Linux server that receives the deployed containers. Because the remote server is in China, the default Docker install path (`get.docker.com`) and Docker Hub pulls don't work reliably — the skill handles that with mirrors.
+This skill prepares both ends of a Kamal deploy: the macOS machine that runs Kamal commands and builds images, and the remote Linux server that receives the deployed containers. Because the remote server is in China, the default Docker install path (`get.docker.com`) and Docker Hub pulls don't work reliably — the skill handles that with mirrors.
 
 The flow:
-1. **Local (macOS):** verify Homebrew → install latest Ruby → install Kamal gem
+1. **Local (macOS):** verify Homebrew → install latest Ruby → install Kamal gem → install Docker (OrbStack preferred)
 2. **Remote (China server):** install Docker with a mirror → configure Docker Hub registry mirror → verify
 3. **Hand off** to the official docs for the actual deploy workflow (`kamal init`, `kamal setup`, `kamal deploy`)
 
-Don't skip steps. Each builds on the previous, and the user may have a partial setup already (Homebrew but no brew Ruby, or Docker installed but no mirror configured). Always check current state before installing — running brew install or docker install on something already there wastes time and confuses the user.
+Don't skip steps. Each builds on the previous, and the user may have a partial setup already (Homebrew but no brew Ruby, Kamal but no Docker, or Docker installed but no mirror configured). Always check current state before installing — running brew install or docker install on something already there wastes time and confuses the user.
 
 ## Why this order matters
 
 - **Homebrew first** because it's the cleanest source for a current Ruby on macOS. Without it the alternative is compiling from source.
 - **Brew Ruby, not system Ruby** because macOS ships with an old Ruby (2.6) under SIP-protected paths. Installing gems against it produces permission errors and broken bin paths. The brew Ruby goes under a path the user owns.
 - **Kamal gem before touching the server** because you need `kamal` working locally to drive the server setup steps (and to test SSH connectivity).
+- **Docker on the Mac before the first build** because Kamal builds the image locally by default and pushes it to the registry. No local Docker → no `kamal deploy`. OrbStack is preferred over Docker Desktop because it's lighter, faster on Apple Silicon, and free for personal use.
 - **Docker on the remote server BEFORE `kamal setup`** because Kamal's built-in `kamal server bootstrap` runs the official `get.docker.com` script, which is slow or blocked in China. Install Docker manually with a mirror first; Kamal will detect it and skip its own bootstrap.
 - **Registry mirror configured before the first deploy** because every Kamal deploy pulls `basecamp/kamal-proxy` from Docker Hub. Without a mirror, this hangs or fails on China servers — and the user spends an hour debugging a network problem when it's actually a config problem.
 
@@ -31,11 +32,15 @@ uname -m                                          # arm64 or x86_64 — affects 
 which brew && brew --version || echo "no brew"
 which ruby && ruby --version
 ruby -e 'puts RbConfig::CONFIG["prefix"]'         # where this ruby lives
+which docker && docker --version || echo "no docker"
+docker info >/dev/null 2>&1 && echo "docker daemon: running" || echo "docker daemon: not running (or missing)"
 ```
 
 If `prefix` starts with `/System/Library/Frameworks/Ruby.framework` or `which ruby` is `/usr/bin/ruby`, that's the system Ruby and needs to be replaced.
 
-Tell the user what you found ("Homebrew installed, but ruby is the system one — I'll install brew Ruby next") so they can follow along. Don't silently barrel ahead.
+If `which docker` returns nothing, Docker isn't installed (Step 5 will fix this). If the binary exists but `docker info` fails, the daemon isn't running — usually means the user installed Docker Desktop or OrbStack but never opened the app after install.
+
+Tell the user what you found ("Homebrew installed, brew Ruby missing, no Docker — I'll install brew Ruby, then Kamal, then OrbStack") so they can follow along. Don't silently barrel ahead.
 
 ## Step 2 — Install Homebrew (skip if present)
 
@@ -86,13 +91,53 @@ kamal version
 
 If `kamal: command not found`, the gem's bin directory isn't on PATH. Find it with `gem env home` and add `$(gem env home)/bin` to PATH the same way as Ruby above.
 
-## Step 5 — Prepare the remote server (Docker + China mirror)
+## Step 5 — Install Docker on the Mac (OrbStack preferred)
+
+Kamal builds the app image locally and pushes it to the registry, so the Mac needs a working Docker daemon. **If `docker info` already succeeded in Step 1, skip this step.**
+
+The team prefers **OrbStack** over Docker Desktop:
+- ~half the memory footprint of Docker Desktop on Apple Silicon
+- Faster container startup and disk I/O
+- Free for personal use (commercial use needs a paid license — check OrbStack's terms for your situation)
+- Same `docker` CLI — drop-in compatible with anything Docker Desktop runs
+
+Install via Homebrew Cask:
+
+```bash
+brew install --cask orbstack
+```
+
+After install, **the user must open OrbStack.app once** so it can set up the `docker` CLI symlinks and start the daemon. Walk them through it:
+
+1. Open OrbStack from Spotlight or Applications
+2. Click through the first-run prompt (it asks whether to enable Docker and/or Linux machines — Docker is what you want for Kamal)
+3. Wait until the menu-bar icon shows the daemon as running (a few seconds)
+
+Then verify in the terminal:
+
+```bash
+docker --version
+docker info | head -5             # should show server info, no errors
+docker run --rm hello-world       # smoke test — pulls image and runs it
+```
+
+If `docker info` errors with `Cannot connect to the Docker daemon`, the user hasn't opened the app yet (or didn't click through the setup prompt). Don't proceed to Step 6 until `docker info` works — `kamal deploy` will fail otherwise.
+
+**Alternative: Docker Desktop.** If the user explicitly prefers Docker Desktop (some teams require it for compliance reasons), install with:
+
+```bash
+brew install --cask docker
+```
+
+Same first-run-the-app requirement applies.
+
+## Step 6 — Prepare the remote server (Docker + China mirror)
 
 The local Mac is now ready to *issue* deploys, but the server that *receives* them needs Docker installed too. Kamal has a `kamal server bootstrap` command that installs Docker via the official `get.docker.com` script — that script is unreliable in China. Install Docker manually on the server with a China mirror first, then let Kamal use the existing install when you `kamal setup`.
 
 You'll need SSH access to the server (root, or a user with sudo). Confirm before proceeding — ask the user for the server address and SSH user if you don't have it.
 
-### 5a — Check what's already on the server
+### 6a — Check what's already on the server
 
 Before installing, see if Docker is already there:
 
@@ -105,9 +150,9 @@ ssh <user>@<server-ip> '
 '
 ```
 
-This tells you the OS, whether Docker exists, whether it's running, and whether a registry mirror is already configured. Skip 5b if Docker is already installed; skip 5c if `daemon.json` already lists China mirrors.
+This tells you the OS, whether Docker exists, whether it's running, and whether a registry mirror is already configured. Skip 6b if Docker is already installed; skip 6c if `daemon.json` already lists China mirrors.
 
-### 5b — Install Docker on the server via a China mirror
+### 6b — Install Docker on the server via a China mirror
 
 Pick one of these install paths. They all install the same docker-ce packages — they differ in which mirror serves the download. Match the install mirror to where the server lives if possible (Aliyun mirror for Aliyun ECS, Tencent mirror for Tencent Cloud) — internal-network access is faster than going over the public internet. Cross-cloud is fine, just slower.
 
@@ -155,7 +200,7 @@ docker --version
 sudo systemctl is-active docker        # should print "active"
 ```
 
-### 5c — Configure the Docker Hub registry mirror
+### 6c — Configure the Docker Hub registry mirror
 
 Even with Docker installed, image pulls from `docker.io` will be painfully slow without a registry mirror. **The team runs a self-hosted Docker Hub pull-through cache at `https://registry-mirror.tealight.uk:8443` — use this on every server, including China-based ones.** It's read-only (pulls only; pushes still go to your image registry) and is optimized for the team's China deploys. This matters for Kamal specifically because `kamal-proxy` (the request router) is pulled from Docker Hub on every deploy.
 
@@ -173,9 +218,9 @@ EOF
 sudo systemctl restart docker
 ```
 
-If the team mirror is ever genuinely unreachable from a particular server (verify by running the smoke test in 5d, not by guessing from a single DNS lookup), fall back to a cloud-specific mirror — see `references/china-mirrors.md` for alternatives. Production servers should keep one fallback configured.
+If the team mirror is ever genuinely unreachable from a particular server (verify by running the smoke test in 6d, not by guessing from a single DNS lookup), fall back to a cloud-specific mirror — see `references/china-mirrors.md` for alternatives. Production servers should keep one fallback configured.
 
-### 5d — Verify the mirror is active
+### 6d — Verify the mirror is active
 
 ```bash
 sudo docker info | grep -A 5 "Registry Mirrors"
@@ -191,13 +236,13 @@ sudo docker pull hello-world
 
 If this completes in a few seconds, Docker is ready for Kamal. If it hangs, the chosen mirror is unreachable from this server — pick a different one from `references/china-mirrors.md` and retry.
 
-### 5e — Skip `kamal server bootstrap`
+### 6e — Skip `kamal server bootstrap`
 
 When the user later runs `kamal setup`, Kamal detects the existing Docker and uses it. Don't run `kamal server bootstrap` separately on China-based servers — it would re-trigger the unreliable `get.docker.com` script and undo the careful setup above.
 
-## Step 6 — Hand off to deploy (with team defaults)
+## Step 7 — Hand off to deploy (with team defaults)
 
-Once `kamal version` works locally and `docker info` on the server shows the mirror, the prerequisites are done. The actual deploy workflow (`kamal init`, edit `config/deploy.yml`, `kamal setup`, `kamal deploy`) is in the official docs:
+Once `kamal version` works locally, `docker info` works locally (OrbStack/Desktop running), and `docker info` on the server shows the mirror, the prerequisites are done. The actual deploy workflow (`kamal init`, edit `config/deploy.yml`, `kamal setup`, `kamal deploy`) is in the official docs:
 
 - Installation & getting started: https://kamal-deploy.org/docs/installation/
 - GitHub repo (issues, source, examples): https://github.com/basecamp/kamal
@@ -209,7 +254,7 @@ A quick command cheat sheet is in `references/kamal-commands.md`.
 When the user runs `kamal init` and edits `config/deploy.yml`, point them at the team's standard endpoints:
 
 - **Image registry** (where Kamal pushes the built app image): `private-registry.tealight.uk:8443` — **requires authentication** (push)
-- **Docker Hub mirror** (server-side, already configured in `daemon.json` from Step 5c): `registry-mirror.tealight.uk:8443` — **public read, no auth needed**
+- **Docker Hub mirror** (server-side, already configured in `daemon.json` from Step 6c): `registry-mirror.tealight.uk:8443` — **public read, no auth needed**
 
 ### deploy.yml template (team conventions)
 
@@ -297,9 +342,12 @@ The Docker Hub mirror at `registry-mirror.tealight.uk:8443` does NOT need creden
 - **PATH change "didn't stick"** — wrong shell config (edited `.bash_profile` but using zsh, or vice versa). Check `echo $SHELL`.
 - **`kamal: command not found` right after install** — gem bin dir isn't on PATH. `gem env home` shows where it lives; append `/bin` and add to PATH.
 - **Old kamal from a previous Ruby** — `which kamal` shows an unexpected path. `gem list -d kamal` reveals where it's coming from; uninstall the stale one with `gem uninstall kamal` against that Ruby.
+- **`docker info`: Cannot connect to the Docker daemon** — OrbStack (or Docker Desktop) is installed but the app hasn't been opened. Tell the user to open it from Applications/Spotlight; the daemon starts when the app runs.
+- **`docker push` fails with "no builder available" or buildx errors** — `docker buildx ls` should show a builder; if not, `docker buildx create --use --name kamal`. Fresh OrbStack installs sometimes lack a default builder for cross-arch builds.
+- **Image builds for arm64 instead of amd64** — Kamal defaults to building for the server's arch via buildx, but if the build seems to ignore that, add `builder: { arch: amd64 }` to `deploy.yml`.
 
 **Remote (China server):**
-- **`get.docker.com` hangs forever** — don't wait. Use the apt/yum path through `mirrors.aliyuncs.com` in 5b instead.
+- **`get.docker.com` hangs forever** — don't wait. Use the apt/yum path through `mirrors.aliyuncs.com` in 6b instead.
 - **`docker pull hello-world` hangs after mirror config** — the chosen mirror is down or unreachable from this server. Try a different one from `references/china-mirrors.md`. Most public mirrors rotate; an authenticated Aliyun mirror is the most stable choice.
 - **`Registry Mirrors` doesn't appear in `docker info`** — daemon.json has a JSON syntax error, or docker wasn't restarted. `sudo cat /etc/docker/daemon.json | python3 -m json.tool` will catch syntax issues.
 - **`kamal setup` tries to install Docker again** — either you ran `kamal server bootstrap` by mistake, or Kamal can't see the existing Docker (SSH user lacks docker group access). Add the SSH user to the `docker` group: `sudo usermod -aG docker <user>` and re-login.
